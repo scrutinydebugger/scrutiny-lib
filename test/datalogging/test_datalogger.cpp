@@ -109,7 +109,7 @@ protected:
         config.set_published_values(rpvs, sizeof(rpvs) / sizeof(rpvs[0]), rpv_read_callback);
 
         scrutiny_handler.init(&config);
-        datalogger.init(&scrutiny_handler, &tb, dlbuffer, sizeof(dlbuffer), trigger_callback);
+        datalogger.init(&scrutiny_handler, dlbuffer, sizeof(dlbuffer), trigger_callback);
 
         memset(buffer_canary_1, 0xAA, sizeof(buffer_canary_1));
         memset(buffer_canary_2, 0x55, sizeof(buffer_canary_2));
@@ -398,7 +398,7 @@ TEST_F(TestDatalogger, ComplexAcquisition)
         for (size_t i = 0; i < data.size(); i++)
         {
             vector<vector<uint8_t>> entry = data[i];
-            ASSERT_EQ(entry.size(), 4);
+            ASSERT_EQ(entry.size(), 4); // 4 signals logged
             if (i > 0)
             {
                 vector<vector<uint8_t>> last_entry = data[i - 1];
@@ -493,4 +493,72 @@ TEST_F(TestDatalogger, TestAlwaysUseFullBuffer)
 
         EXPECT_GE(reader->get_total_size(), 9 * sizeof(dlbuffer) / 10) << error_msg; // 90% usage at least
     }
+}
+
+TEST_F(TestDatalogger, TestAquireTimeCorrectly)
+{
+    datalogging::Configuration dlconfig;
+    dlconfig.items_count = 1;
+    dlconfig.items_to_log[0].type = datalogging::LoggableType::TIME;
+
+    dlconfig.decimation = 1;
+    dlconfig.timeout_100ns = 0;
+    dlconfig.probe_location = 128;
+    dlconfig.trigger.hold_time_100ns = 0;
+    dlconfig.trigger.operand_count = 0;
+    dlconfig.trigger.condition = datalogging::SupportedTriggerConditions::AlwaysTrue;
+
+    datalogger.config()->copy_from(&dlconfig);
+    datalogger.configure(&tb);
+    uint32_t max_loop = sizeof(dlbuffer) * 8; // don't think we can beat 1 bit per sample
+    uint32_t i = 0;
+    while (!datalogger.get_encoder()->buffer_full() && i < max_loop)
+    {
+        datalogger.process();
+        tb.step(5);
+        i++;
+    }
+    datalogger.arm_trigger();
+    datalogger.force_trigger();
+    i = 0;
+    while (datalogger.get_state() != scrutiny::datalogging::DataLogger::State::ACQUISITION_COMPLETED && i < max_loop)
+    {
+        datalogger.process();
+        tb.step(5);
+        i++;
+    }
+    datalogger.process();
+    ASSERT_EQ(datalogger.get_state(), scrutiny::datalogging::DataLogger::State::ACQUISITION_COMPLETED);
+
+#if SCRUTINY_DATALOGGING_ENCODING == SCRUTINY_DATALOGGING_ENCODING_RAW
+    RawFormatParser parser;
+    constexpr size_t output_buffer_required_size = sizeof(dlbuffer) + 4;
+#else
+#error "Unsupported parser"
+#endif
+    uint8_t output_buffer[output_buffer_required_size] = {0};
+    datalogger.get_reader()->reset();
+    datalogger.get_reader()->read(output_buffer, sizeof(output_buffer));
+    parser.init(&scrutiny_handler, &dlconfig, output_buffer, sizeof(output_buffer));
+    parser.parse(datalogger.get_reader()->get_entry_count());
+    ASSERT_FALSE(parser.error());
+    vector<vector<vector<uint8_t>>> data = parser.get();
+    static_assert(sizeof(timestamp_t) == sizeof(uint32_t), "Expect timestamp to be 32 bits");
+
+    ASSERT_EQ(data.size(), datalogger.get_reader()->get_entry_count());
+    for (size_t i = 0; i < data.size(); i++)
+    {
+        vector<vector<uint8_t>> entry = data[i];
+        ASSERT_EQ(entry.size(), 1); // 1 signal = time
+
+        scrutiny::timestamp_t timestamp = codecs::decode_32_bits_big_endian(entry[0].data());
+        if (i > 0)
+        {
+            vector<vector<uint8_t>> last_entry = data[i - 1];
+            scrutiny::timestamp_t last_timestamp = codecs::decode_32_bits_big_endian(last_entry[0].data());
+            ASSERT_EQ(timestamp - last_timestamp, 5) << "Entry #" << i;
+        }
+    }
+
+    check_canaries();
 }

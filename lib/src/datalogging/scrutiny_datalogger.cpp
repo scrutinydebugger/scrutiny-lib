@@ -23,17 +23,16 @@ namespace scrutiny
     {
         void DataLogger::init(
             MainHandler const *const main_handler,
-            Timebase const *const timebase,
             uint8_t *const buffer,
             buffer_size_t const buffer_size,
             trigger_callback_t trigger_callback)
         {
-            m_timebase = timebase;
+            m_timebase = nullptr;
             m_main_handler = main_handler;
             m_buffer_size = buffer_size;
             m_trigger_callback = trigger_callback;
 
-            m_encoder.init(main_handler, timebase, &m_config, buffer, buffer_size);
+            m_encoder.init(main_handler, &m_config, buffer, buffer_size);
             m_acquisition_id = 0;
 
             reset();
@@ -56,12 +55,12 @@ namespace scrutiny
             m_log_points_after_trigger = 0;
         }
 
-        void DataLogger::configure(Timebase *timebase_for_log, uint16_t config_id)
+        void DataLogger::configure(Timebase *timebase, uint16_t config_id)
         {
             reset();
 
             m_config_valid = true;
-            m_timebase_for_log = timebase_for_log;
+            m_timebase = timebase;
             m_config_id = config_id;
 
             if (m_config.items_count > SCRUTINY_DATALOGGING_MAX_SIGNAL || m_config.items_count == 0)
@@ -200,6 +199,7 @@ namespace scrutiny
             // The configuration is good. Let's initialize to do an start logging
             if (m_config_valid)
             {
+                m_encoder.set_timebase(m_timebase);
                 m_trigger.active_condition->reset(m_trigger.conditions.data());
                 m_encoder.reset();
                 m_state = State::CONFIGURED;

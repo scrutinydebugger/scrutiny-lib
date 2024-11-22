@@ -88,7 +88,8 @@ TEST_F(TestRawEncoder, BasicEncoding)
 
     dlconfig.items_to_log[2].type = datalogging::LoggableType::TIME;
 
-    encoder.init(&scrutiny_handler, &timebase, &dlconfig, dlbuffer, sizeof(dlbuffer));
+    encoder.init(&scrutiny_handler, &dlconfig, dlbuffer, sizeof(dlbuffer));
+    encoder.set_timebase(&timebase);
     timebase.reset();
 
     var1 = 1.0f;

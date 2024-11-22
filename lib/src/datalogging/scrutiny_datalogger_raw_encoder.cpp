@@ -125,7 +125,9 @@ namespace scrutiny
                 }
                 else if (m_config->items_to_log[i].type == datalogging::LoggableType::TIME)
                 {
-                    codecs::encode_32_bits_big_endian(m_timebase_for_log->get_timestamp(), &m_buffer[cursor]);
+                    // No check for m_timebase == nullptr.
+                    // Expect the datalogger to set it.
+                    codecs::encode_32_bits_big_endian(m_timebase->get_timestamp(), &m_buffer[cursor]);
                     cursor += sizeof(scrutiny::timestamp_t);
                 }
             }
@@ -148,13 +150,11 @@ namespace scrutiny
         /// @brief  Init the encoder
         void RawFormatEncoder::init(
             MainHandler const *const main_handler,
-            Timebase const *const timebase_for_log,
             datalogging::Configuration const *const config,
             uint8_t *const buffer,
             datalogging::buffer_size_t const buffer_size)
         {
             m_main_handler = main_handler;
-            m_timebase_for_log = timebase_for_log;
             m_config = config;
             m_buffer = buffer;
             m_buffer_size = buffer_size;
